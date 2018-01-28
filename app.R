@@ -1,23 +1,16 @@
 #library(rsconnect)
-#setwd("C:\Users\mjohn\Documents\R\shinyapp")
-#rsconnect::deployApp('path/to/your/app')
+#setwd("C:/Users/mjohn/Documents/R/shinyapp")
+#rsconnect::deployApp()
 #2.0.0
 library(shiny)
 library(shinydashboard)
-library(gdata)
-library('R.matlab')
-library('ggplot2')
-library('reshape2')
-library("R.matlab")
-library("rgl")
-library("plot3D")
-library("plot3Drgl")
-library("scatterplot3d")
-library("tibble")
+library(R.matlab)
+library(ggplot2)
+library(reshape2)
+library(R.matlab)
 library(stringr)
-library("plyr")
 require(MASS)
-library(gridExtra)
+library(RCurl)
 
 ui <- dashboardPage(
   skin = "black",
@@ -28,13 +21,15 @@ ui <- dashboardPage(
       menuItem("Movement Analysis", icon = icon("area-chart"), tabName = "MA"),
       menuItem("Mating Prediction", icon = icon("area-chart"), tabName = "Mating_Prediction"),
       fileInput("file1", "Upload trajectory File (.txt)",accept = c("text/csv",".txt")),
-      actionButton("goButton", "Run Analysis!")
+      #actionButton("demo", "Use demo data"),
+      checkboxInput("demo", "Use demo data", FALSE),
+      actionButton("goButton", "Run analysis!")
     )
   ),
-    
+  
   dashboardBody(
     tags$head(tags$style(HTML("
-                               @import url('https://fonts.googleapis.com/css?family=Averia+Serif+Libre');
+                              @import url('https://fonts.googleapis.com/css?family=Averia+Serif+Libre');
                               .main-header .logo {
                               font-family: 'Averia Serif Libre', cursive;
                               font-weight: bold;
@@ -44,98 +39,126 @@ ui <- dashboardPage(
                               "))),
     #attributes
     fluidRow(
-    valueBoxOutput(width = 6, "count_wasps"),
-    valueBoxOutput(width = 6, "frames")
+      valueBoxOutput(width = 6, "count_wasps"),
+      valueBoxOutput(width = 6, "frames")
     ),
     
     tabItems(
       tabItem("MA",
-        fluidRow(
-          box(
-            width = 6, status = "warning",
-            title = "2D Plot",
-            plotOutput("plot"),
-            numericInput("wasp_id_2dplot", label = h4("Enter wasp number"), value = 1),
-            selectInput("color", "Color:",
-                        c("Red" = "red",
-                          "Green" = "green",
-                          "Blue" = "blue",
-                          "Black" = "black"))
-          ),
-          box(
-            width = 6, status = "warning",
-            title = "Heatmap",
-            plotOutput("heatmap"),
-            h5("Two-dimensional kernel density estimation"),
-            numericInput("wasp_id_heatmap", label = h4("Enter wasp number"), value = 1),
-            sliderInput("bandwidths", "Bandwidths:",
-                        min = 1, max = 200, value = 75
-            ),
-            sliderInput("gridpoints", "Grid points:",
-                        min = 1, max = 200, value = 50
-            ),
-            numericInput("x_pixels", label = h5("Resolution (x axis)"), value = 1800),
-            numericInput("y_pixels", label = h5("Resolution (y axis)"), value = 1200)
-          )
-        )
+              fluidRow(
+                box(
+                  width = 6, status = "warning",
+                  title = "2D Plot",
+                  plotOutput("plot"),
+                  tableOutput("debug"),
+                  selectInput("color", "Color:",
+                              c("Red" = "red",
+                                "Green" = "green",
+                                "Blue" = "blue",
+                                "Black" = "black"))
+                ),
+                box(
+                  width = 6, status = "warning",
+                  title = "Heatmap",
+                  plotOutput("heatmap"),
+                  h5("Two-dimensional kernel density estimation"),
+                  sliderInput("bandwidths", "Bandwidths:",
+                              min = 1, max = 200, value = 75
+                  ),
+                  sliderInput("gridpoints", "Grid points:",
+                              min = 1, max = 200, value = 50
+                  ),
+                  numericInput("x_pixels", label = h5("Resolution (x axis)"), value = 1800),
+                  numericInput("y_pixels", label = h5("Resolution (y axis)"), value = 1200)
+                )
+              )
       ),
-
+      
       tabItem("Mating_Prediction",
-        fluidRow(
-          tabBox(
-            title = "Analysis",
-            tabPanel("Neighbor attraction time-series", plotOutput("mate_prediction")),
-            tabPanel("Histogram", plotOutput("hist_plots"),
-                     h4("Peak data"),
-                     tableOutput("peak_attr"))
-          ),
-          
-          box(
-            width = 6, status = "warning",
-            title = "Parameters",
-            "Select two wasps", br(),
-            numericInput("wasp1_id_social", label = h5("Wasp ID"), value = 1),
-            numericInput("wasp2_id_social", label = h5("Wasp ID"), value = 2),
-            hr(),
-            "Smoothing algorithm: Nadaraya-Watson kernel regression", br(),
-            sliderInput("neck", label = h5("peak threshold"), min = 1, 
-                        max = 1000, value = 500),
-            checkboxInput("smooth", label = "Enable smoothing", value = TRUE),
-            sliderInput("bw", label = h5("bandwidth"), min = 1, 
-                        max = 1000, value = 20),
-            checkboxInput("filter", label = "floor threshold (beta)", value = FALSE),
-            sliderInput("thresh", label = h5("Threshold"), min = 1, 
-                        max = 1000, value = 200),
-            checkboxInput("flip", label = "flip axis", value = TRUE),
-            h4("Peak finding"),
-            h5("Higher m values are stricter"),
-            sliderInput("m", label = h5("m value"), min = 1, 
-                        max = 5000, value = 1000)
-          )
-        )
-
-       )
+              fluidRow(
+                tabBox(
+                  title = "Analysis",
+                  tabPanel("Neighbor attraction time-series", plotOutput("mate_prediction")),
+                  tabPanel("Histogram", plotOutput("hist_plots"),
+                           h4("Peak data"),
+                           tableOutput("peak_attr"))
+                ),
+                
+                box(
+                  width = 6, status = "warning",
+                  title = "Parameters",
+                  "Select two wasps", br(),
+                  numericInput("wasp1_id_social", label = h5("Wasp ID"), value = 1),
+                  numericInput("wasp2_id_social", label = h5("Wasp ID"), value = 2),
+                  hr(),
+                  "Smoothing algorithm: Nadaraya-Watson kernel regression", br(),
+                  sliderInput("neck", label = h5("peak threshold"), min = 1, 
+                              max = 1000, value = 100),
+                  checkboxInput("smooth", label = "Enable smoothing", value = TRUE),
+                  sliderInput("bw", label = h5("bandwidth"), min = 1, 
+                              max = 1000, value = 20),
+                  checkboxInput("filter", label = "floor threshold (beta)", value = FALSE),
+                  sliderInput("thresh", label = h5("Threshold"), min = 1, 
+                              max = 1000, value = 200),
+                  checkboxInput("flip", label = "flip axis", value = TRUE),
+                  h4("Peak finding"),
+                  h5("Higher m values are stricter"),
+                  sliderInput("m", label = h5("m value"), min = 1, 
+                              max = 5000, value = 1000)
+                )
+              )
       )
     )
-  )
-        
+    )
+    )
+
 #########################################################################################
 
 server <- function(input, output) {
+  
+  idTracker <- eventReactive(input$goButton, {
+    if (input$demo){
+      x <- getURL('https://gist.githubusercontent.com/mjoh223/7d66d0108a03e6fe65de32f213ba86a0/raw/f382d93e5a1b42e8c9f5e2d6c6872ca59502b7b7/gistfile1.txt')
+      demo <- read.delim(text = x, header = TRUE, strip.white = TRUE, sep = "")
+      return(demo)
+    } else{
+      inFile <- input$file1
+      if (is.null(inFile)) {
+        return(NULL)} else{
+          read.delim(inFile$datapath, header = TRUE, strip.white = TRUE, sep = "")}
+    }})
   
   output$debug <- renderTable({
     return(NULL)
   })
   
-  idTracker <- eventReactive(input$goButton, {
-    inFile <- input$file1
-    if (is.null(inFile))
-      return(NULL)
-    read.delim(inFile$datapath, header = TRUE, strip.white = TRUE, sep = "")})
+  idTrackerFOI <- eventReactive({c(input$ID,ff(),lf())}, {
+    a <- as.double(input$ID)
+    x <- a+(2*(a-1))
+    ff <- as.double(ff())
+    lf <- as.double(lf())
+    wx <- idTracker()[ff():lf(),x]
+    wy <- idTracker()[ff():lf(),x+1]
+    p<-data.frame(wx,wy)
+    return(p)
+  })
+  
+  output$plot <- renderPlot({
+    plot <- plot(idTrackerFOI(), type="l", col=input$color, asp=1, xlab = "x (px)", ylab = "y (px)", main = "Animal trajectory")
+    return(plot)
+  })
+  
+  output$heatmap <- renderPlot({
+    xp <- as.double(input$x_pixels)
+    yp <- as.double(input$y_pixels)
+    map <- na.omit(idTrackerFOI())
+    d <- structure(map, .Names = c("X", "Y"), class = "data.frame", row.names = c(NA, -nrow(map)-1))
+    dens <- kde2d(d$X, d$Y, h=input$bandwidths, n=input$gridpoints, lims = c(1, xp, 1, yp))
+    filled.contour(dens, color=terrain.colors, asp=1)
+  })
   
   output$count_wasps <- renderValueBox({
     count<-dim(idTracker())[2]/3
-    
     valueBox(
       value = count,
       subtitle = "Total number of wasps",
@@ -144,14 +167,8 @@ server <- function(input, output) {
     )
   })
   
-  
-  count_wasps <- reactive({
-    count<-dim(idTracker())[2]/3
-    return(count)})
-  
   output$frames <- renderValueBox({
     frames <- dim(idTracker())[1]
-    
     valueBox(
       value = frames,
       subtitle = "Total number of frames",
@@ -175,6 +192,11 @@ server <- function(input, output) {
       )
       insertUI("#goButton", "afterEnd",
                ui = "Choose frames of interest")
+      insertUI("#goButton", "afterEnd",
+               numericInput("ID", "animal ID", value = 1)
+      )
+      insertUI("#goButton", "afterEnd",
+               ui = "Choose ID of animal of interest")
     }})
   
   time_series <- reactive({time_series <- (1:frames()/input$fps)/60})
@@ -182,79 +204,7 @@ server <- function(input, output) {
   ff <- reactive({ff <- input$FOI_s})
   lf <- reactive({lf <- input$FOI_e})
   
-  output$plot <- renderPlot({
-    
-    a <- as.double(input$wasp_id_2dplot)
-    x <- a+(2*(a-1)) #thanks kim!
-    y <- x+1
-    ff <- as.double(ff())
-    lf <- as.double(lf())
-    x <- idTracker()[ff:lf,x]
-    y <- idTracker()[ff:lf,y]
-    p<-data.frame(x,y)
-    # plot <- ggplot(idTracker()[ff:lf,], aes(x,y)) +
-    #          geom_point(alpha = input$alpha, color = input$color) + coord_fixed(ratio = 1)
-    plot <- plot(x,y, type="l", col=input$color, asp=1, ylim = rev(range(y)))
-    
-    return(plot)})
-  
-  output$heatmap <- renderPlot({
-    a <- as.double(input$wasp_id_heatmap)
-    xp <- as.double(input$x_pixels)
-    yp <- as.double(input$y_pixels)
-    x <- a+(2*(a-1))
-    y <- x+1
-    ff <- as.double(ff())
-    lf <- as.double(lf())
-    size <- lf-ff
-    x <- idTracker()[1:size,x]
-    y <- idTracker()[1:size,y]
-    x <- x[!is.na(x)]
-    y <- y[!is.na(y)]
-    map <- list(x,y)
-    d <- structure(map, .Names = c("X", "Y"), class = "data.frame", row.names = c(NA, -size-1))
-    dens <- kde2d(d$X, d$Y, h=input$bandwidths, n=input$gridpoints, lims = c(1, xp, 1, yp))
-    filled.contour(dens, color=terrain.colors, asp=1, ylim = rev(range(y)) )})
-  
-  output$distance_by_time <- renderPlot({
-    ff <- as.double(ff())
-    lf <- as.double(lf())
-    low <- as.numeric(input$prox_range[1])
-    high <- as.numeric(input$prox_range[2])
-    size <- dim(idTracker())[1]
-    w1 <- as.double(input$wasp1_id_social)
-    x1 <- w1+(2*(w1-1))
-    y1 <- x1+1
-    w2 <- as.double(input$wasp2_id_social)
-    x2 <- w2+(2*(w2-1))
-    y2 <- x2+1
-    x1 <- idTracker()[2:size,x1]
-    y1 <- idTracker()[2:size,y1]     
-    x2 <- idTracker()[2:size,x2]
-    y2 <- idTracker()[2:size,y2]
-    compX <- abs(x1-x2)
-    compY <- abs(y1-y2)
-    x <- data.frame(compX)
-    y <- data.frame(compY)
-    hypot <- sqrt(x^2+y^2)
-    # plot <- ggplot(data=idTracker()[2:size,]) +
-    #          geom_line(mapping=aes(x=2:size,y=hypot), color = "black") + 
-    #          xlim(ff,lf)+
-    #          geom_segment(mapping=aes(x=ff,y=low,xend=lf,yend=low),color="red", linetype = 2)+
-    #          geom_segment(mapping=aes(x=ff,y=high,xend=lf,yend=high),color="red", linetype = 2)
-    timeline <- c(ff,lf)
-    plot(x=1:length(hypot), y=hypot, type="l", xlim=timeline)
-    abline(h=low, col="red", lty=2)
-    abline(h=high, col="red", lty=2)
-    xlab("Frames")
-    ylab("proximity (px)")
-    return(plot)})
-  
-  
   output$mate_prediction <- renderPlot({
-    #peak_attr <- peak_attr()
-    #peak_attr <- as_tibble(peak_attr)
-    #hist(peak_attr$time.of.peak)
     idTracker <- idTracker()
     idTracker<-idTracker[complete.cases(idTracker), ]
     ff <- as.double(ff())
@@ -282,9 +232,8 @@ server <- function(input, output) {
     x <- c(1:length(y))
     y_out <- smooth.me()(x,y, smooth = input$smooth, input$bw , filter = input$filter, input$thresh, flip = input$flip)
     peaks <- find.peaks()(y_out[,2],input$m)
-    plot(y_out, type="l", xlim=timeline)
+    plot(y_out, type="l", xlim=timeline, xlab = "time (frames)", ylab = "neighbor proximity (px)")
     for (i in 1:length(peaks)) {points(peaks[i], y_out[peaks[i],2], col="blue", pch=16)}
-    
     #indexing
     forward <- list()
     reverse <- list()
@@ -321,9 +270,6 @@ server <- function(input, output) {
       points(p-b,y_out[p-b,2], col="red", pch=16)
       reverse[[name]] <- b
     }
-    
-    
-    
   })
   
   peak_attr <- reactive({
@@ -429,44 +375,12 @@ server <- function(input, output) {
     hist(peak_attr$absolute.start.time, main="Histogram of mate attempt initiation time")
   })
   
-  
-  output$prox_calc <- renderText({
-    ff <- as.double(ff())
-    lf <- as.double(lf())
-    size <- dim(idTracker())[1]
-    w1 <- as.double(input$wasp1_id_social)
-    x1 <- w1+(2*(w1-1))
-    y1 <- x1+1
-    w2 <- as.double(input$wasp2_id_social)
-    x2 <- w2+(2*(w2-1))
-    y2 <- x2+1
-    x1 <- idTracker()[ff:lf,x1]
-    y1 <- idTracker()[ff:lf,y1]     
-    x2 <- idTracker()[ff:lf,x2]
-    y2 <- idTracker()[ff:lf,y2]
-    both <- data_frame(x1,y1)
-    compX <- abs(x1-x2)
-    compY <- abs(y1-y2)
-    x <- data.frame(compX)
-    y <- data.frame(compY)
-    hypot <- sqrt(x^2+y^2)
-    low <- as.numeric(input$prox_range[1])
-    high <- as.numeric(input$prox_range[2])
-    values <- sum(hypot>low & hypot<high, na.rm = TRUE)
-    return(values)})
-  
-  output$probs <- renderPlot({
-    num <- seq(3, ncol(idTracker()), by=3)
-    prob <- idTracker()[num]
-    return(NULL)})
-  
   output$version_log <- renderText({
     log<-c("
-           0.9.4
-           8/14/2017
-           * heatmap bug fixed
-           * ability to input video resolution
-           * change the frames of interest with own input values
+           1.0.0
+           1/27/2018
+           * plotting bug fixed
+           * quicker analysis
            ")
     return(log)})
   
@@ -528,3 +442,4 @@ server <- function(input, output) {
 }
 
 shinyApp(ui=ui, server=server)
+
