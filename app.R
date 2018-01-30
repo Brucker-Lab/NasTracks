@@ -4,13 +4,14 @@
 #2.0.0
 library(shiny)
 library(shinydashboard)
-library(R.matlab)
 library(ggplot2)
 library(reshape2)
-library(R.matlab)
 library(stringr)
-require(MASS)
+library(MASS)
+library(tibble)
 library(RCurl)
+library(dplyr)
+library(dbscan)
 
 ui <- dashboardPage(
   skin = "black",
@@ -20,6 +21,7 @@ ui <- dashboardPage(
     sidebarMenu(
       menuItem("Movement Analysis", icon = icon("area-chart"), tabName = "MA"),
       menuItem("Mating Prediction", icon = icon("area-chart"), tabName = "Mating_Prediction"),
+      menuItem("Chasing Prediction (beta)", icon = icon("area-chart"), tabName = "Chase_Prediction"),
       fileInput("file1", "Upload trajectory File (.txt)",accept = c("text/csv",".txt")),
       #actionButton("demo", "Use demo data"),
       checkboxInput("demo", "Use demo data", FALSE),
@@ -107,10 +109,29 @@ ui <- dashboardPage(
                               max = 5000, value = 1000)
                 )
               )
+      ),
+      
+      tabItem("Chase_Prediction",
+              fluidRow(
+                tabBox(
+                  title = "Analysis",
+                  tabPanel("Chasing events", plotOutput("chase_prediction"))
+                ),
+                
+                box(
+                  width = 6, status = "warning",
+                  title = "Parameters",
+                  "Select two wasps", br(),
+                  numericInput("SPD", label = h5("Speed"), value = 2),
+                  numericInput("BOX", label = h5("Proximity"), value = 75),
+                  numericInput("CONE", label = h5("Theta"), value = 0.35)
+                )
+              )
       )
     )
     )
     )
+
 
 #########################################################################################
 
@@ -157,6 +178,96 @@ server <- function(input, output) {
     filled.contour(dens, color=terrain.colors, asp=1)
   })
   
+  output$chase_prediction <- renderPlot({
+    NUM_WASPS <- dim(idTracker())[2]/3
+    SPD <- as.numeric(input$SPD)
+    BOX <- as.numeric(input$BOX)
+    CONE <- as.numeric(input$CONE)
+    dat <- na.omit(idTracker())
+    dat_rad <- list()
+    dat_spd <- list()
+    cat <- list()
+    n <- 1:NUM_WASPS
+    x<-n+(2*(n-1))
+    y<-x+1
+    dy <- as.matrix(dat[-1,y]-dat[-nrow(dat),y])
+    dx <- as.matrix(dat[-1,x]-dat[-nrow(dat),x])
+    dat_rad <- as_tibble(atan2(dy, dx))
+    dat_spd <- as_tibble(sqrt(abs(dx^2)+abs(dy^2)))
+    # #Ensures parameters are met
+    chase <- vector('list', length(dat))
+    combn_index <- combn(1:NUM_WASPS,2)
+    chase <- apply(combn_index, 2, function(x) {
+      x1<-x[1]+(2*(x[1]-1))
+      y1<-x1+1
+      x2<-x[2]+(2*(x[2]-1))
+      y2<-x2+1
+      p1<-x[1]*3
+      p2<-x[2]*3
+      mutate(dat[-1,], idx = 2:nrow(dat)) %>%
+        dplyr::filter(
+          abs(dat_rad[x[1]] - dat_rad[x[2]]) < CONE &
+            dat_spd[x[1]] > SPD &
+            dat_spd[x[2]] > SPD &
+            abs(as.matrix(dat[-1,x1]) - as.matrix(dat[-1,x2])) < BOX &
+            abs(as.matrix(dat[-1,y1]) - as.matrix(dat[-1,y2])) < BOX) %>%
+        dplyr::select(idx,x1,y1,p1,x2,y2,p2)
+    })
+    #check chase dimensions and replace no chases with NA
+    for (c in seq_along(chase)){
+      #print(paste0(c, " ", cc, " ", nrow(chase[[c]]), sep=""))
+      if (nrow(chase[[c]])==0){
+        chase[[c]] <- NA
+      }
+    }
+    #clusters
+    cluster <- list()
+    for (k in seq_along(chase)){
+      idx <- chase[[k]][1]
+      chase.y <- dat_spd[as.matrix(idx), k]
+      if (length(chase[[k]]) > 1 ){
+        t <- data.frame(idx, chase.y)
+        cluster[[k]] <-dbscan(as.matrix(t), eps = 25, minPts = 15, borderPoints = T)["cluster"]
+      } else {
+        cluster[[k]] <- NA
+      }
+    }
+    #master data frame with location, cluster, and prob
+    master <- list()
+    for (k in seq_along(chase)){
+      master[[k]] <- cbind(cluster[[k]], chase[[k]])
+    }
+    #remove 0 grp
+    master_v2 <- list()
+    for (k in seq_along(master)){
+      if (length(chase[[k]])!=1){
+        master_v2[[k]] <- filter(master[[k]], cluster!=0)
+      } else {
+        master_v2[[k]] <- list(NA)
+      }
+    }
+    #check master v2 dimensions
+    for (c in seq_along(master_v2)){
+      if (length(unlist(master_v2[[c]])) < 1){
+        master_v2[[c]] <- list(NA)
+      }
+      #print(paste0(c, " ", cc, " ", length(unlist(master_v2[[c]][[cc]])), sep=""))
+    }
+    #graph for verification
+    i <- as.numeric(input$combn)
+    combn_index <- combn(1:NUM_WASPS,2)
+    idv1 <- combn_index[1,i]
+    idv2 <- combn_index[2,i]
+    p <- ggplot() +
+      geom_point(data = master_v2[[i]], mapping = aes(x=master_v2[[i]][,3], y=master_v2[[i]][,4], color = paste0("wasp ", idv1)), color="orange") +
+      geom_point(data = master_v2[[i]], mapping = aes(x=master_v2[[i]][,6], y=master_v2[[i]][,7], color = paste0("wasp ", idv2)), color="darkolivegreen") +
+      facet_wrap(~cluster, scales = "free") +
+      xlab("x (px)") +
+      ylab("y (px)") +
+      theme(legend.title=element_blank())
+    return(p)
+  })
+  
   output$count_wasps <- renderValueBox({
     count<-dim(idTracker())[2]/3
     valueBox(
@@ -197,6 +308,13 @@ server <- function(input, output) {
       )
       insertUI("#goButton", "afterEnd",
                ui = "Choose ID of animal of interest")
+      insertUI("#CONE", "afterEnd",
+               #numericInput("combn", "pairwise index", value = 1),
+               selectInput("combn", "Choose comparision:",
+                           c("Wasp1:Wasp2" = 1,
+                             "Wasp1:Wasp3" = 2,
+                             "Wasp2:Wasp3" = 3))
+      )
     }})
   
   time_series <- reactive({time_series <- (1:frames()/input$fps)/60})
